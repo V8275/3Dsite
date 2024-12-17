@@ -2,28 +2,39 @@ import logo from './logo.svg';
 import './App.css';
 import { useEffect, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-//import { OrbitControls } from '@react-three/drei';
-
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { OrbitControls } from '@react-three/drei';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { DragControls } from 'three/examples/jsm/controls/DragControls';
-let path = 'monkey.gltf';
+import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
+import * as THREE from 'three';
 
-function MyModel(props) { 
-  const { camera, gl } = useThree();
+let pathPanel = '/models/collada/Panel.dae';
+let pathTank = '/models/collada/untitled.dae';
+
+function MyModel({ position, scale, pathModel }) { 
   const modelRef = useRef(); 
   const [model, setModel] = useState(null);
-  const [dragControl, setDragControl] = useState(null);
-  const orbitControl = useRef(null);
+  const mixerRef = useRef();
 
   // Загрузка модели
   useEffect(() => {
-    const loader = new GLTFLoader();
+    const loader = new ColladaLoader();
     loader.load(
-      path,
-      (gltf) => {
-        const scene = gltf.scene;
+      pathModel,
+      (collada) => {
+        const scene = collada.scene;
+        scene.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true; // Отбрасывает тени
+            child.receiveShadow = true; // Принимает тени
+          }
+        });
         setModel(scene);
+
+        // Создание AnimationMixer
+        mixerRef.current = new THREE.AnimationMixer(scene);
+        collada.animations.forEach((clip) => {
+          mixerRef.current.clipAction(clip).play(); // Запуск анимации
+        });
       },
       (progress) => {
         console.log(`Loading file: ${(progress.loaded / progress.total * 100)}%`);
@@ -32,68 +43,57 @@ function MyModel(props) {
         console.error('An error occurred while loading the GLB file:', error);
       }
     );
-  }, []);
+  }, [pathModel]); // Добавляем pathModel в зависимости
 
-  // Состояние масштаба
-  const [scale, setScale] = useState(1);
-  const [rotation, setRotation] = useState([0, 0, 0]);
-
-  // Обработка события нажатия
-  /*const handleClick = () => {
-    setScale(scale === 0.1 ? 0.2 : 0.1);
-  };*/
-
-  // Применение масштаба
-  useFrame(() => {
-    if (model) {
-      model.scale.set(0.1, 0.1, 0.1);
-      model.rotation.set(rotation[0], rotation[1], rotation[2]);
+  // Обновление анимации
+  useFrame((state, delta) => {
+    if (mixerRef.current) {
+      mixerRef.current.update(delta); // Обновляем анимацию
     }
   });
 
-  //перетаскивание
+  return model ? (
+    <primitive object={model} position={position} scale={scale} ref={modelRef} />
+  ) : null;
+}
+
+const Scene = () => {
+  const { gl } = useThree();
+
+  // Включение теней
   useEffect(() => {
-    if (model) {
-      orbitControl.current = new OrbitControls(camera, gl.domElement);
-      orbitControl.current.target.set(0, 0, 0);
-      orbitControl.current.update();
+    gl.shadowMap.enabled = true;
+    gl.shadowMap.type = THREE.PCFSoftShadowMap;
+  }, [gl]);
 
-      const control = new DragControls([model], camera, gl.domElement);
-      control.addEventListener('dragstart', () => {
-        if(orbitControl.current){orbitControl.current.enabled = false;};
-      });
-      control.addEventListener('dragend', () => {
-        if(orbitControl.current){orbitControl.current.enabled = true;};
-      });
-      control.addEventListener('change', () => {
-        setRotation([model.rotation.x, model.rotation.y, model.rotation.z]);
-      });
-      setDragControl(control);
-
-      return () => {
-        orbitControl.current.dispose();
-        dragControl.dispose();
-      };
-    }
-  }, [model, camera, gl]);
- 
   return (
-    <group {...props} ref={modelRef} >
-      {model && <primitive object={model} />}
-    </group>
+    <>
+      <ambientLight intensity={Math.PI / 2} />
+      <directionalLight position={[30,30,30]} castShadow intensity={4} position={[30, 30, 30]} 
+        castShadow 
+        intensity={4} 
+        shadow-mapSize-width={2048} // Увеличиваем ширину shadow map
+        shadow-mapSize-height={2048} // Увеличиваем высоту shadow map
+        shadow-camera-near={0.5} // Минимальное расстояние для теней
+        shadow-camera-far={500} // Максимальное расстояние для теней
+        shadow-camera-left={-10} // Левый край камеры
+        shadow-camera-right={10} // Правый край камеры
+        shadow-camera-top={10} // Верхний край камеры
+        shadow-camera-bottom={-10} // Нижний край камеры
+        />
+      <MyModel pathModel = {pathTank} position={[0, 0, 0]} scale={[1,1,1]} />
+      <MyModel pathModel = {pathPanel} position={[0, 0, 0]} scale={[100,100,100]} />
+      <OrbitControls />
+    </>
   );
 }
 
-function App() {
+const App = () => {
   return (     
-    <Canvas>
-      <ambientLight intensity={Math.PI / 2} />
-      <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} decay={0} intensity={Math.PI} />
-      <pointLight position={[-10, -10, -10]} decay={0} intensity={Math.PI} />
-      <MyModel position={[0, 0, 0]}/>
-      
+    <Canvas shadows>
+      <Scene/>
     </Canvas> 
   );
 }
-//onClick={handleClick}
+
 export default App;
